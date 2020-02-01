@@ -1,16 +1,24 @@
 <?php
 
-namespace App\Listener;
+namespace App\Subscriber;
 
 use App\Event\OrderEvent;
 use App\Logger;
 use App\Texter\Sms;
 use App\Texter\SmsTexter;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-class OrderSmsListener
+class OrderSmsSubscriber implements EventSubscriberInterface
 {
     protected $texter;
     protected $logger;
+
+    public static function getSubscribedEvents()
+    {
+        return [
+            'order.after_save' => ['onAfterOrderIsCreated', 1]
+        ];
+    }
 
     public function __construct(SmsTexter $texter, Logger $logger)
     {

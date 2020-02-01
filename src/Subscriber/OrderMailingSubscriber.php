@@ -1,28 +1,30 @@
 <?php
 
-namespace App\Listener;
+namespace App\Subscriber;
 
 use App\Event\OrderEvent;
 use App\Logger;
 use App\Mailer\Email;
 use App\Mailer\Mailer;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
-/**
- * A LA DECOUVERTE D'UN LISTENER :
- * ----------
- * Vous l'avez vu dans le fichier index.php : un listener peut prendre 3 formes :
- * 1) Une closure (fonction annonyme)
- * 2) Une fonction définie
- * 3) La méthode d'un objet instancié
- * 
- * Ici on créé une classe pour porter la méthode onBeforeOrderIsCreated et c'est cette méthode que l'on veut attacher au dispatcher pour
- * l'événément "order.before_save" :)
- * 
- */
-class OrderMailingListener
+class OrderMailingSubscriber implements EventSubscriberInterface
 {
     protected $mailer;
     protected $logger;
+
+    public static function getSubscribedEvents()
+    {
+        // Attention ici à ne pas confondre les priorités :
+        // onBeforeOrderIsCreated a une priorité de 1, car dans le OrderLoggerSubscriber, on a une fonction avec priorité 2 qui passera avant
+        // onAfterOrderIsCreated a une priorité de 2, car elle doit être appelée avant la méthode du OrderSmsSubscriber qui aura une priorité 
+        // de 1 !
+        // LES PRIORITES SONT PAR EVENEMENT !
+        return [
+            'order.before_save' => ['onBeforeOrderIsCreated', 1],
+            'order.after_save' => ['onAfterOrderIsCreated', 2]
+        ];
+    }
 
     public function __construct(Mailer $mailer, Logger $logger)
     {

@@ -1,56 +1,52 @@
 <?php
 
 /**
- * QUATRIEME PARTIE : LES PRIORITES DES LISTENERS
+ * CINQUIEME PARTIE : ADIEU LES LISTENERS, BIENVENUE AUX SUBSCRIBERS
  * ------------
  * 
- * On a réglé beaucoup de problèmes ... MAIS.
+ * Vous l'avez remarqué, ici, nous avons des objets qui parfois possèdent plusieurs méthodes qui vont être attachées au dispatcher. 
+ * On peut encore refactoriser ces codes en créant des classes de type Subscriber.
  * 
- * Vous l'avez peut-être remarqué : en réalité notre code actuel ne fait pas exactement ce que faisait le code de base. Voilà ce qu'on 
- * faisait auparavant :
- * 1) Log de la commande en cours
- * 2) Email au stock pour le prévenir
- * 3) Email au client pour le remercier
- * 4) SMS au client pour le remercier
+ * DIFFERENCE ENTRE LISTENER ET SUBSCRIBER :
+ * -----------
+ * Un listener est un CALLABLE, un code que l'on peut appeler (CALL), c'est donc au choix :
+ * - une fonction annonyme (closure)
+ * - une fonction définie
+ * - une méthode d'un objet
  * 
- * Or le code actuel, du fait de l'ordre dans lequel les listeners sont déclarés ne fait pas du tout la même chose :
- * 1) Email au stock
- * 2) Log de la commande
- * 3) SMS au client
- * 4) Email au client
+ * C'est très flexible, mais on peut trouver que cela manque un peu d'organisation.
  * 
- * Par défaut, les listeners sont appelés dans l'ordre dans lesquels on les a ajouté au dispatcher .. Est-il possible de gérer cet ordre ?
+ * Un subscriber est une classe dont le but est clairement de répondre à des événements du dispatcher. Elle implémente une interface
+ * EventSubscriberInterface et a obligation de déclarer elle-même à quels événements elle veut répondre et avec laquelle de ses méthodes !
  * 
- * DECOUVRONS LES PRIORITES :
- * -------------
- * Lorsqu'on ajoute un listener au dispatcher sur un événement donné, on peut aussi spécifier une priorité afin que le dispatcher en tienne
- * compte lorsque l'événement apparaitra.
+ * LES AVANTAGES DU SUBSCRIBER :
+ * -----------
+ * Le subscriber est donc une classe qui possède les méthodes qu'elle veut, mais surtout elle possède une méthode getSubscribedEvents où elle
+ * définit quels sont les événements qui l'intéresse, quelles méthodes devront être appélées et quelles seront les priorités.
  * 
- * Le nombre le plus haut (le plus important donc) a la priorité sur le nombre le plus bas. Par défaut, la priorité assigné à chaque
- * listener est de 0.
+ * Donc quand on enregistre un subscriber auprès du dispatcher, on n'a rien d'autre à préciser, le subscriber le fait lui-même !
  * 
- * On va donc donner des priorités à nos Listeners pour qu'ils soient appelés dans l'ordre que l'on veut, du plus grand au plus petit.
+ * On centralise donc la configuration dans la classe elle-même, et on allège les déclarations faites auprès du dispatcher !
  * 
- * Et voilà, le soucis est réglé !
- * 
- * --------------
- * Dans la prochaine section, on découvrira la notion de subscribers : vous l'avez remarqué, ici, nous avons des objets qui parfois possèdent
- * plusieurs méthodes qui vont être attachées au dispatcher. On peut encore refactoriser ces codes en créant des classes de type Subscriber.
- * 
- * Elles permettent de rationnaliser la configuration des listeners en un seul endroit : dans la classe elle-même.
+ * LES INCONVENIENTS DU SUBSCRIBER :
+ * -----------
+ * Là où avec les Listeners on pouvait constater en un point donné de quels listeners étaient attachés à quels événement, on doit désormais
+ * aller ouvrir chaque subscriber pour voir qui est attaché à quel événement. On a décentraliser la configuration, ce qui parfois peut être
+ * embêttant !
  * 
  * ----------------
  * Pour bien comprendre cette section, regardez en particulier les fichiers suivantes :
- * - index.php : on donne des priorités à nos listeners
+ * - index.php : on créé nos subscribers et on les attache au dispatcher
+ * - src/Subscriber : on transforme les listeners en un subscribers
  */
 
 use App\Controller\OrderController;
 use App\Database;
-use App\Listener\OrderLoggerListener;
-use App\Listener\OrderMailingListener;
-use App\Listener\OrderSmsListener;
+use App\Subscriber\OrderMailingSubscriber;
+use App\Subscriber\OrderSmsSubscriber;
 use App\Logger;
 use App\Mailer\Mailer;
+use App\Subscriber\OrderLoggerSubscriber;
 use App\Texter\SmsTexter;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -68,49 +64,34 @@ $smsTexter = new SmsTexter(); // Un service fictif d'envoi de SMS (là aussi que
 $logger = new Logger(); // Un service de log (qui ne fait que du var_dump aussi)
 $dispatcher = new EventDispatcher();
 
+// Nos subscribers :
+$orderMailingSubscriber = new OrderMailingSubscriber($mailer, $logger);
+$orderSmsSubscriber = new OrderSmsSubscriber($smsTexter, $logger);
+$orderLoggerSubscriber = new OrderLoggerSubscriber($logger);
+// Remplace l'ancien code :
 // Nos listeners (voir le dossier src/Listener) :
-$orderMailingListener = new OrderMailingListener($mailer, $logger);
-$orderSmsListener = new OrderSmsListener($smsTexter, $logger);
-$orderLoggerListener = new OrderLoggerListener($logger);
+// $orderMailingListener = new OrderMailingListener($mailer, $logger);
+// $orderSmsListener = new OrderSmsListener($smsTexter, $logger);
+// $orderLoggerListener = new OrderLoggerListener($logger);
 
+$dispatcher->addSubscriber($orderMailingSubscriber);
+$dispatcher->addSubscriber($orderSmsSubscriber);
+$dispatcher->addSubscriber($orderLoggerSubscriber);
+
+// Remplace l'ancien code :
 // Mise en place des écoutes :
 // Notez que nous donnons un dernier paramètre numérique à la fonction addListener() : c'est la priorité.
 // Rappelez vous que la priorité ira du nombre le plus grand au nombre le plus petit et se calcule PAR EVENEMENT
 // On a donc ici deux listeners sur l'événement order.before_save (le 2 et le 1) puis deux listeners sur l'événement order.after_save (le 2 et
 // le 1)
-
 // 1. L'envoi de mail au stock quand une commande est en cours de création (juste avant insertion en base de données)
-$dispatcher->addListener('order.before_save', [$orderMailingListener, 'onBeforeOrderIsCreated'], 1);
+// $dispatcher->addListener('order.before_save', [$orderMailingListener, 'onBeforeOrderIsCreated'], 1);
 // 2. Le log de la commande en cours de création (juste avant insertion en base de données)
-$dispatcher->addListener('order.before_save', [$orderLoggerListener, 'onBeforeOrderIsCreated'], 2);
+// $dispatcher->addListener('order.before_save', [$orderLoggerListener, 'onBeforeOrderIsCreated'], 2);
 // 3. L'envoi de SMS au client après enregistrement de la commande (juste après insertion en base)
-$dispatcher->addListener('order.after_save', [$orderSmsListener, 'onAfterOrderIsCreated'], 1);
+// $dispatcher->addListener('order.after_save', [$orderSmsListener, 'onAfterOrderIsCreated'], 1);
 // 4. L'envoi de mail au client après enregistrement de la commande (juste après insertion en base)
-$dispatcher->addListener('order.after_save', [$orderMailingListener, 'onAfterOrderIsCreated'], 2);
-
-/**
- * ON PEUT CONNAITRE LES PRIORITES SI ON LE SOUHAITE :
- * -----------
- * Imaginons que vous ayez une dizaine ou une vingtaine de listeners déclarés dans des fichiers différents à divers endroits, ça commencerait
- * à être complexe de savoir qui a quelle priorité et où placer un nouveau listener dans la hiérarchie des priorités.
- * 
- * Pas de panique ! 
- * 
- */
-
-// On récupère les listeners sur un événement donné
-$listeners = $dispatcher->getListeners('order.before_save');
-
-var_dump("Priorité des listeners sur l'évenement order.before_save :");
-
-// Pour chaque listener, on demande quelle est sa priorité sur l'événement donné
-foreach ($listeners as $listener) {
-    $priority = $dispatcher->getListenerPriority('order.before_save', $listener);
-    var_dump([
-        'priority' => $priority,
-        'listener' => $listener
-    ]);
-}
+// $dispatcher->addListener('order.after_save', [$orderMailingListener, 'onAfterOrderIsCreated'], 2);
 
 
 $controller = new OrderController($database, $dispatcher);
