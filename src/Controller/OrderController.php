@@ -3,12 +3,14 @@
 namespace App\Controller;
 
 use App\Database;
+use App\Event\OrderEvent;
 use App\Logger;
 use App\Mailer\Email;
 use App\Mailer\Mailer;
 use App\Model\Order;
 use App\Texter\Sms;
 use App\Texter\SmsTexter;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 class OrderController
 {
@@ -17,13 +19,15 @@ class OrderController
     protected $mailer;
     protected $texter;
     protected $logger;
+    protected $dispatcher;
 
-    public function __construct(Database $database, Mailer $mailer, SmsTexter $texter, Logger $logger)
+    public function __construct(Database $database, Mailer $mailer, SmsTexter $texter, Logger $logger, EventDispatcher $eventDispatcher)
     {
         $this->database = $database;
         $this->mailer = $mailer;
         $this->texter = $texter;
         $this->logger = $logger;
+        $this->dispatcher = $eventDispatcher;
     }
 
     public function displayOrderForm()
@@ -49,6 +53,17 @@ class OrderController
             ->setQuantity($_POST['quantity'])
             ->setEmail($_POST['email'])
             ->setPhoneNumber($_POST['phone']);
+
+        /**
+         * PREMIER ESSAI DU DISPATCHER :
+         * ----------
+         * Désormais, via le constructeur, notre Controller reçoit le dispatcher et peut donc s'en servir pour prévenir tous ceux que ça 
+         * intéresse qu'un événement 'order.before_save' a lieu !
+         * 
+         * Ici, nous disons au dispatcher : Hey, préviens ceux que ça intéresse (les listeners de l'événement 'order.before_save') que ça
+         * a lieu et passe leur toutes les informations nécessaire via cet objet OrderEvent afin qu'ils puissent travailler !
+         */
+        $this->dispatcher->dispatch(new OrderEvent($order), 'order.before_save');
 
         // Avant d'enregistrer, on veut envoyer un email à l'administrateur :
         // voir src/Mailer/Email.php et src/Mailer/Mailer.php
