@@ -3,6 +3,8 @@
 namespace App\Listener;
 
 use App\Event\OrderEvent;
+use App\Logger;
+use App\Mailer\Email;
 use App\Mailer\Mailer;
 
 /**
@@ -20,14 +22,39 @@ use App\Mailer\Mailer;
 class OrderMailingListener
 {
     protected $mailer;
+    protected $logger;
 
-    public function __construct(Mailer $mailer)
+    public function __construct(Mailer $mailer, Logger $logger)
     {
         $this->mailer = $mailer;
+        $this->logger = $logger;
     }
 
     public function onBeforeOrderIsCreated(OrderEvent $orderEvent)
     {
-        var_dump("ORDERMAILINGLISTENER EST APPELE ! HOURRA !", $orderEvent);
+        $order = $orderEvent->getOrder();
+
+        $email = new Email();
+        $email->setSubject("Commande en cours")
+            ->setBody("Merci de vérifier le stock pour le produit {$order->getProduct()} et la quantité {$order->getQuantity()} !")
+            ->setTo("stock@maboutique.com")
+            ->setFrom("web@maboutique.com");
+
+        $this->mailer->send($email);
+    }
+
+    public function onAfterOrderIsCreated(OrderEvent $orderEvent)
+    {
+        $order = $orderEvent->getOrder();
+
+        $email = new Email();
+        $email->setSubject("Commande confirmée")
+            ->setBody("Merci pour votre commande de {$order->getQuantity()} {$order->getProduct()} !")
+            ->setFrom("web@maboutique.com")
+            ->setTo($order->getEmail());
+
+        $this->mailer->send($email);
+
+        $this->logger->log("Email de confirmation envoyé à {$order->getEmail()} !");
     }
 }
